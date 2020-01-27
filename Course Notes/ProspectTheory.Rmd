@@ -1,0 +1,322 @@
+---
+title: "ProspectTheory"
+author: "Anita"
+date: "10/11/2019"
+output: html_document
+---
+
+Data cleaning
+```{r}
+GROUP_ALIAS <- "KLAMM"
+data <- read.csv("sgt_data.csv")
+
+# Rename question columns and add participant IDs
+time_stamp <- data[["Tidsstempel"]]
+data[["Tidsstempel"]] <- NULL
+colnames(data) <- paste0("question_", seq_len(ncol(data)))
+data <- data %>% tibble::add_column(
+  "Tidsstempel" = time_stamp,
+  .before = "question_1") %>% 
+  mutate(ID = 1:n())
+
+# Gather the questions and answers ( -> long format)
+data <- data %>% 
+  tidyr::gather(key = "question", value = "answer", 
+                dplyr::starts_with("question_"))
+
+devtools::install_github("tidyverse/tidyr")
+
+# Extract answer options for each question 
+choices <- data %>% 
+  select(question, answer) %>% 
+  group_by(question) %>% 
+  distinct() %>% 
+  mutate(answer_option = 1:n(),
+         question_and_option = paste0("a_", answer_option)) %>% 
+  tidyr::pivot_wider(id_cols = "question",
+                     names_from = "question_and_option",
+                     values_from = "answer")
+```
+
+
+
+The prospect theory
+```{r}
+#Prospect theory
+#The teacher's version
+
+#Value #Tversky & Kahneman 1992, simplified
+#prospect theory value
+PTValue <- function(x, alfa, theta){  #x <- d1$ValueChosenP
+#  Enter function
+  v = if_else(x<0, -theta * (-x)^alfa, x^alfa)
+  return(v)
+}
+
+#Probability #Tversky & Kahneman 1992 (different betas depending on pos/neg but you can simplify by setting them to the same)
+PTProb <- function(x, beta){  #x <- d1$ProbChosenP
+#  Enter function
+  wp = (x^beta)/(x^beta + (1-x)^beta)^(1/beta)
+  return(wp)
+}
+
+#Plotting the functions to visualize
+#value function
+l = 100
+x <- seq(from = -200, to = 200, length.out = l)
+alfa <- 0.5
+theta <- 2.25
+vx <- PTValue(x, alfa, theta)
+
+plot(x,vx, type = "l")
+
+
+#probability weighting function
+p <- seq(from = 0, to = 1, length.out = l)
+beta <- 0.7
+wp <- PTProb(p, beta)
+
+plot(p,wp, type = "l")
+
+
+#function to plot both side by side and make it look somewhat nice
+library(ggplot2)
+plotPTfunctions <- function(parameters){
+  l = 100
+  parameters <- data.frame(parameters)
+  x <- seq(from = -1000, to = 1000, length.out = l)
+  vx <- numeric(l*dim(parameters)[1])
+  for(g in 1:dim(parameters)[1]){
+    vx[((g-1)*l+1):(g*l)] <- PTValue(x, as.numeric(parameters[g,1]), 
+                                     as.numeric(parameters[g,3]))
+  }
+  x <- rep(x, dim(parameters)[1])
+  p <- seq(from = 0, to = 1, length.out = l)
+  #wp <- PTProb(p, parameters[2])
+  wp <- numeric(l*dim(parameters)[1])
+  for(g in 1:dim(parameters)[1]){
+    wp[((g-1)*l+1):(g*l)] <- PTProb(p, as.numeric(parameters[g,2]))
+  }
+  p <- rep(p, dim(parameters)[1])
+  if(is.null(parameters$Group)){parameters$Group <- "ALL"}
+  ################
+  plotting <- data.frame(x = c(x, p), 
+                         y = c(vx, wp), 
+                         f = rep(c("Value", "Weight Probability"), each = length(x)),
+                         Group = rep(parameters$Group, each = l))
+  gp <- ggplot(plotting, aes(x, y)) +
+    geom_hline(yintercept = 0) +
+    geom_vline(xintercept = 0) +
+    geom_line(aes(color = Group), alpha = I(0.8)) +
+    facet_wrap(.~f, scales = "free") +
+    theme_classic()
+  print(gp)
+}
+
+#testing
+plotPTfunctions(data.frame(alfa, beta, theta))
+
+###################################
+```
+
+
+Part 2
+```{r}
+#Prospect theory
+#The teacher's version
+
+#Value #Tversky & Kahneman 1992, simplified
+PTValue <- function(x, alfa, theta){  #x <- d1$ValueChosenP
+  v <- c(-(theta*(-x[x<0])^alfa),(x[x>=0]^alfa))
+  return(v)
+}
+
+#Probability #Tversky & Kahneman 1992 (different betas depending on pos/neg but you can simplify by setting them to the same)
+PTProb <- function(x, beta){  #x <- d1$ProbChosenP
+  wp <- (x^beta/(x^beta + (1 - x)^beta)^(1/beta)) 
+  return(wp)
+}
+
+#Plotting the functions to visualize
+#value function
+l = 100
+x <- seq(from = -200, to = 200, length.out = l)
+alfa <- 0.5
+theta <- 2.25
+vx <- PTValue(x, alfa, theta)
+
+plot(x,vx, type = "l")
+
+
+#probability weighting function
+p <- seq(from = 0, to = 1, length.out = l)
+beta <- 0.7
+wp <- PTProb(p, beta)
+
+plot(p,wp, type = "l")
+
+
+#function to plot both side by side and make it look somewhat nice
+library(ggplot2)
+plotPTfunctions <- function(parameters){
+  l = 100
+  parameters <- data.frame(parameters)
+  x <- seq(from = -1000, to = 1000, length.out = l)
+  vx <- numeric(l*dim(parameters)[1])
+  for(g in 1:dim(parameters)[1]){
+    vx[((g-1)*l+1):(g*l)] <- PTValue(x, as.numeric(parameters[g,1]), 
+                                     as.numeric(parameters[g,3]))
+  }
+  x <- rep(x, dim(parameters)[1])
+  p <- seq(from = 0, to = 1, length.out = l)
+  #wp <- PTProb(p, parameters[2])
+  wp <- numeric(l*dim(parameters)[1])
+  for(g in 1:dim(parameters)[1]){
+    wp[((g-1)*l+1):(g*l)] <- PTProb(p, as.numeric(parameters[g,2]))
+  }
+  p <- rep(p, dim(parameters)[1])
+  if(is.null(parameters$Group)){parameters$Group <- "ALL"}
+  ################
+  plotting <- data.frame(x = c(x, p), 
+                         y = c(vx, wp), 
+                         f = rep(c("Value", "Weight Probability"), each = length(x)),
+                         Group = rep(parameters$Group, each = l))
+  gp <- ggplot(plotting, aes(x, y)) +
+    geom_hline(yintercept = 0) +
+    geom_vline(xintercept = 0) +
+    geom_line(aes(color = Group), alpha = I(0.8)) +
+    facet_wrap(.~f, scales = "free") +
+    theme_classic()
+  print(gp)
+}
+
+#testing
+plotPTfunctions(data.frame(alfa, beta, theta))
+
+
+
+###################################
+
+
+#Function for calculating prospect difference for one decision - "should" be positive 
+calcProspectDiff <- function(d1, alfa, beta, theta){  #d1 <- data[1,]
+  #value chosen
+  v.ch <- PTValue(d1$ValueChosenP, alfa, theta)
+  #value non-chosen
+  v.nch <- PTValue(d1$ValueNonChosenP, alfa, theta)
+  
+  #Probability chosen
+  p.ch <- PTProb(d1$ProbChosenP, beta)
+  #Probability non-chosen
+  p.nch <- PTProb(d1$ProbNonChosenP, beta)
+
+  Prosp.ch <- v.ch*p.ch
+  Prosp.nch <- v.nch*p.nch
+  
+  return(Prosp.ch - Prosp.nch)
+}
+
+######################################################################
+
+####################Data
+
+data <- read.csv("prospect.csv")
+names(data) <- c("Group","Participant", "Question", "ProbChosenP", "ValueChosenP",
+                 "ProbNonChosenP","ValueNonChosenP")
+
+#Parameters - to test
+alfa <- 0.5
+beta <- 0.7
+theta <- 2.25
+
+
+#Calculate prospect difference
+ProspectDiff <- calcProspectDiff(data, alfa, beta, theta)
+
+#Is the prediction (based on the parameters) correct?
+ProspectDiff > 0
+
+#how big proportion correct?
+sum(ProspectDiff > 0) / length(ProspectDiff)
+
+#################################
+
+#rewrite/expand the function for grid search
+calcPropCorrect <- function(d, parameters){
+  ProspectDiff <-  calcProspectDiff(d, parameters[1], parameters[2], parameters[2])
+  return(sum(ProspectDiff > 0) / length(ProspectDiff))
+}
+
+##########
+#brute force grid search
+#test combinations of parameters within a given range
+#expand.grid() generates all possible combinations of the input-vectors
+size = 10 #controls the size of grid (i.e. size 10 -> 1000 parameter combinations)
+parameter.grid <- expand.grid(alfa = seq(from = 0, to = 1, length.out = size),
+            beta = seq(from = 0, to = 1, length.out = size),
+            theta = seq(from = 0, to = 4, length.out = size))
+
+
+
+#Brute force testing on one set of parameters
+i <- 12
+print(calcPropCorrect(data, c(parameter.grid[i,], recursive = TRUE)))
+
+
+#############################################
+#Brute force on all parameter combinations given ALL data
+propCorrect <- apply(parameter.grid, 1, calcPropCorrect, d = data)
+
+#what is the best model performance (1 = all choices correct)
+max(propCorrect)
+
+bestParameters <- parameter.grid[propCorrect == max(propCorrect),]
+
+#might NOT be reasonable but we will do it anyway
+if(dim(bestParameters)[1] > 1){
+  #randomly pick one combination
+  bestParameters <- bestParameters[sample(1:dim(bestParameters)[1],1),]
+}
+
+plotPTfunctions(bestParameters)
+#########################################
+
+
+#Same thing but for each group separately
+bestParameters_group <- data.frame()
+for(g in unique(data$Group)){
+  propCorrect_g <- apply(parameter.grid, 1, calcPropCorrect,
+                             d = subset(data, Group = g))
+  bestParameters_g <- parameter.grid[propCorrect_g == max(propCorrect_g),]
+ if(dim(bestParameters_g)[1] > 1){
+   bestParameters_g <- bestParameters_g[sample(1:dim(bestParameters_g)[1],1),]
+ }
+  bestParameters_group <- rbind(bestParameters_group, data.frame(Group = g, bestParameters_g))
+}
+
+plotPTfunctions(bestParameters_group)
+#bestParameters_group
+
+
+##################################
+# Using an optimization method
+library(bbmle)
+
+calcPropCorrect_forMLE <- function(d, alfa, beta, theta){
+  ProspectDiff <-  calcProspectDiff(d, alfa, beta, theta)
+  return(1 - (sum(ProspectDiff > 0) / length(ProspectDiff))) #return smthng to minimize
+}
+
+#testing
+calcPropCorrect_forMLE(data, alfa, beta, theta)
+calcPropCorrect_forMLE(data, 0.0, 0.5, 2)
+
+#parnames(calcPropCorrect_forMLE)<-c("alfa", "beta", "theta")
+fitALL <- mle2(calcPropCorrect_forMLE, method="Nelder-Mead",
+               start = list(alfa = 0.5, beta = 0.5, theta = 1), data = list(d = data))
+
+plotPTfunctions(data.frame(Group = "ALL", alfa = fitALL@coef["alfa"], 
+                           beta = fitALL@coef["beta"], theta = fitALL@coef["theta"]))
+
+```
+

@@ -1,0 +1,239 @@
+---
+title: "DM_stimuli"
+author: "Anita"
+date: "12/16/2019"
+output: html_document
+---
+
+
+
+```{r}
+pacman::p_load(tidyverse, egg, scales)
+#load data
+sdf <-read.csv("stimuli_latest_version.csv", sep = ';', dec = ',')
+
+subset <- sdf %>% 
+  select(Question_ID, volume_1, valence_1, volume_2, valence_2, subset$order)
+
+
+subset$order <- sample(c("1 is A", "2 is A"), nrow(subset), replace=TRUE, prob=c(0.5, 0.5) )
+
+write.csv(subset, "nodist.csv")
+
+samp <- read.csv("nodist.csv")
+subset <- samp %>% 
+  select(Question_ID, order)
+
+sdf$pair1_distr1 <- as.character(sdf$pair1_distr1)
+sdf$pair1_distr2 <- as.character(sdf$pair1_distr2)
+sdf$pair2_distr1 <- as.character(sdf$pair2_distr1)
+sdf$pair2_distr2 <-  as.character(sdf$pair2_distr2)
+sdf$Question_ID <-  as.factor()
+```
+
+
+Make plots:
+```{r}
+# Make plots.
+mask <- as.factor(c("1", "2", "3", "4", "5"))
+list_of_plots_p1_distributions<-lapply(1:nrow(sdf), function(i) {
+  ratings = sdf[i,]
+  lst <-  strsplit(ratings$pair1_distr1, ",")
+  lst2 <- as.numeric(unlist(lst, use.names = FALSE))
+  fac <- factor(lst2, levels=c("1","2", "3", "4", "5"))
+  plotA <- ggplot()+
+      geom_bar(aes(mask, y = ..count..), fill = "gray89") +
+      aes(fac)+
+      geom_bar(aes(y = (..count..)/sum(..count..)), fill = "goldenrod2", color = "darkgoldenrod3") +
+      scale_x_discrete(breaks = c(1, 2, 3, 4, 5), labels = c("1 star", "2 star", "3 star", "4 star", "5 star"), drop = FALSE)+
+      scale_y_continuous(labels = scales::percent, limits=c(0,1))+
+      geom_text(aes(label = scales::percent(round((..count..)/sum(..count..), digits = 2)),
+             y= sum((..count..)/sum(..count..))), stat="count",
+         vjust = 0, hjust = 0, family= "sans", size = 3, color = "grey42")+
+      xlab("")+
+      ylab("")+
+      coord_flip()+
+      theme_classic()+
+      ggtitle(paste("Option 1: ","\n",ratings$valence_1, " out of 5 stars","\n", ratings$volume_1," reviews", sep = ""))+
+      theme(text = element_text(family = "sans",size=12))+
+      theme(plot.title = element_text(family = "sans",lineheight=.8, face="bold"))
+    
+    plotB <- ggplot()+
+      aes(fac)+
+      geom_bar(aes(y = ..count..))
+    
+    lst_b <-  strsplit(ratings$pair1_distr2, ",")
+    lst_b <- as.numeric(unlist(lst_b, use.names = FALSE))
+    fac_b <- factor(lst_b, levels=c("1","2", "3", "4", "5"))
+    plotB <- ggplot()+
+      geom_bar(aes(mask, y = ..count..), fill = "gray89") +
+      aes(fac_b)+
+      geom_bar(aes(y = (..count..)/sum(..count..)), fill = "goldenrod2", color = "darkgoldenrod3") +
+      scale_x_discrete(breaks = c(1, 2, 3, 4, 5), labels = c("1 star", "2 star", "3 star", "4 star", "5 star"), drop = FALSE)+
+      scale_y_continuous(labels = scales::percent, limits=c(0,1))+
+      geom_text(aes(label = scales::percent(round((..count..)/sum(..count..), digits = 2)),
+             y= sum((..count..)/sum(..count..))), stat="count",
+         vjust = 0, hjust = 0, family= "sans", size = 3, color = "grey42")+
+      xlab("")+
+      ylab("")+
+      coord_flip()+
+      theme_classic()+
+      ggtitle(paste("Option 2: ","\n",ratings$valence_1, " out of 5 stars","\n", ratings$volume_1," reviews", sep = ""))+
+      theme(text = element_text(family = "sans",size=12))+
+      theme(plot.title = element_text(family = "sans",lineheight=.8, face="bold"))
+    
+    ggarrange(plotA, plotB, ncol = 2, nrow = 1)
+    
+  })
+
+#show plots
+list_of_plots_p1_distributions
+
+#save plots
+for (row in 1:nrow(sdf)) {
+    ratings = sdf[row,]
+    pl = list_of_plots_p1_distributions[[row]]
+    file_name = paste("question_", ratings$Question_ID, "_product1_dist", ".png", sep="")
+    ggsave(plot = pl,file_name, width = 22, height = 9, units = "cm")
+}
+
+list_of_plots_p2_distributions<-lapply(1:nrow(sdf), function(i) {
+  ratings = sdf[i,]
+  lst <-  strsplit(ratings$pair2_distr1, ",")
+  lst2 <- as.numeric(unlist(lst, use.names = FALSE))
+  fac <- factor(lst2, levels=c("1","2", "3", "4", "5"))
+  plotA <- ggplot()+
+      geom_bar(aes(mask, y = ..count..), fill = "gray89") +
+      aes(fac)+
+      geom_bar(aes(y = (..count..)/sum(..count..)), fill = "goldenrod2", color = "darkgoldenrod3") +
+      scale_x_discrete(breaks = c(1, 2, 3, 4, 5), labels = c("1 star", "2 star", "3 star", "4 star", "5 star"), drop = FALSE)+
+      scale_y_continuous(labels = scales::percent, limits=c(0,1))+
+      geom_text(aes(label = scales::percent(round((..count..)/sum(..count..), digits = 2)),
+             y= sum((..count..)/sum(..count..))), stat="count",
+         vjust = 0, hjust = 0, family= "sans", size = 3, color = "grey42")+
+      xlab("")+
+      ylab("")+
+      coord_flip()+
+      theme_classic()+
+      ggtitle(paste("Option 1: ","\n",ratings$valence_2, " out of 5 stars","\n", ratings$volume_2," reviews", sep = ""))+
+      theme(text = element_text(family = "sans",size=12))+
+      theme(plot.title = element_text(family = "sans",lineheight=.8, face="bold"))
+    
+    
+    lst_b <-  strsplit(ratings$pair2_distr2, ",")
+    lst_b <- as.numeric(unlist(lst_b, use.names = FALSE))
+    fac_b <- factor(lst_b, levels=c("1","2", "3", "4", "5"))
+    plotB <- ggplot()+
+      geom_bar(aes(mask, y = ..count..), fill = "gray89") +
+      aes(fac_b)+
+      geom_bar(aes(y = (..count..)/sum(..count..)), fill = "goldenrod2", color = "darkgoldenrod3") +
+      scale_x_discrete(breaks = c(1, 2, 3, 4, 5), labels = c("1 star", "2 star", "3 star", "4 star", "5 star"), drop = FALSE)+
+      scale_y_continuous(labels = scales::percent, limits=c(0,1))+
+      geom_text(aes(label = scales::percent(round((..count..)/sum(..count..), digits = 2)),
+             y= sum((..count..)/sum(..count..))), stat="count",
+         vjust = 0, hjust = 0, family= "sans", size = 3, color = "grey42")+
+      xlab("")+
+      ylab("")+
+      coord_flip()+
+      theme_classic()+
+      ggtitle(paste("Option 2: ","\n",ratings$valence_2, " out of 5 stars","\n", ratings$volume_2," reviews", sep = ""))+
+      theme(text = element_text(family = "sans",size=12))+
+      theme(plot.title = element_text(family = "sans",lineheight=.8, face="bold"))
+    
+    ggarrange(plotA, plotB, ncol = 2, nrow = 1)
+    
+  })
+
+list_of_plots_p2_distributions
+
+#save plots
+for (row in 1:nrow(sdf)) {
+    ratings = sdf[row,]
+    pl = list_of_plots_p2_distributions[[row]]
+    file_name = paste("question_", ratings$Question_ID, "_product2_dist", ".png", sep="")
+    ggsave(plot = pl,file_name, width = 22, height = 9, units = "cm")
+}
+
+
+
+
+# pdf("list_of_plots_p1_distributions.pdf")
+# list_of_plots_p1_distributions
+# dev.off()
+# 
+# # # Save plots to tiff. Makes a separate file for each plot.
+# # for (row in 1:nrow(sdf)) {
+# #     file_name = paste("p1_d1_plot_", row, ".tiff", sep="")
+# #     tiff(file_name)
+# #     print(plot_list_p1_d1[[row]])
+# #     dev.off()
+# # }
+# 
+# # pdf("plots_p1_distributions.pdf")
+# # for (i in 1:nrow(sdf)) {
+# #     print(plot_list_p1_d1[[i]])
+# # }
+# # dev.off()
+mask <- as.factor(c("1", "2", "3", "4", "5"))
+
+ratings = sdf[1,]
+lst <-  strsplit(ratings$pair1_distr2, ",")
+lst2 <- as.numeric(unlist(lst, use.names = FALSE))
+lst3 <- factor(lst2, levels=c("1","2", "3", "4", "5"))
+pl <- ggplot()+
+  geom_bar(aes(mask, y = ..count..), fill = "gray89") +
+  aes(lst3)+
+  geom_bar(aes(y = (..count..)/sum(..count..)), fill = "goldenrod2", color = "darkgoldenrod3") +
+  scale_x_discrete(breaks = c(1, 2, 3, 4, 5), labels = c("1 star", "2 star", "3 star", "4 star", "5 star"), drop = FALSE)+
+  scale_y_continuous(labels = scales::percent, limits=c(0,1))+
+  geom_text(aes(label = scales::percent(round((..count..)/sum(..count..), digits = 2)),
+             y= sum((..count..)/sum(..count..))), stat="count",
+         vjust = 0, hjust = 0, family= "sans", size = 3, color = "grey42")+
+  xlab("")+
+  ylab("")+
+  coord_flip()+
+  theme_classic()+
+  ggtitle(paste(ratings$valence_1, " out of 5 stars","\n", ratings$volume_1," reviews", sep = ""))+
+  theme(text = element_text(family = "sans",size=12))+
+  theme(plot.title = element_text(family = "sans",lineheight=.8, face="bold"))
+
+pl
+ggsave(plot = pl,"test.pdf", width = 10, height = 5, units = "cm")
+
+
+
+
+
+
+```
+
+
+Report:
+```{r}
+test_original <-read.csv("dataset.csv", sep = )
+test <- add_rownames(test_original) %>% 
+         gather(var, value, -rowname) %>% 
+         spread(rowname, value)
+
+test <- test %>% 
+  mutate(Question_ID = ifelse(grepl("q\\d", var),as.numeric(gsub("[^[:digit:].]", "", var)), var))
+
+# test_2 <- add_rownames(test) %>% 
+#          gather(var, value, -rowname) %>% 
+#          spread(rowname, value)
+# 
+# test_3 <- test_original %>%
+#   select(responde, difftime, age, gender, rating_m, volume_m, content_, )
+# 
+# test_4 <- test_original %>% 
+#   select(responde,q1_a_or_:q20_b)
+library(reshape)
+test_3 <- test_original %>% 
+  select(responde, difftime, age, gender, rating_m, volume_m, content_, q1_a_or_:q20_b)
+test_4 <- melt(test_3, id=c("responde","difftime", "age", "gender", "rating_m", "volume_m", "content_"))
+test_5 <- test_4 %>% 
+  mutate(Question_ID = ifelse(grepl("or", variable),as.numeric(gsub("[^[:digit:].]", "", variable)), variable))
+
+
+```
+

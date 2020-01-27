@@ -1,0 +1,576 @@
+---
+title: "DM_analysis"
+author: "Anita and Anna"
+date: "1/3/2020"
+output: html_document
+---
+
+# Set up
+```{r}
+pacman::p_load(tidyverse, viridis)
+```
+
+
+# Data preparation
+
+*Respondent data*
+```{r}
+original_df <-read.csv("dataset.csv", sep = )
+
+complete <- original_df %>% 
+  filter(original_df$stato_4 == 1)
+
+complete$gender = ifelse(complete$gender == 1, "Female", "Male")
+
+complete %>% group_by(gender) %>% summarise(n())
+
+test <- complete %>% 
+  select(responde, difftime, age, gender, rating_m, volume_m, content_, q1_a_or_:q20_b)
+
+test_reshaped <- gather(test, Question_idS, Response, q1_a_or_:q20_b, factor_key = TRUE) 
+test_reshaped2 <- test_reshaped %>% drop_na(Response)
+
+test_reshaped3 <- test_reshaped2 %>% 
+  mutate(Question_type = ifelse(grepl("or", Question_idS),"volume_valence_dilemma", "distribution"))
+
+volume_valence <- test_reshaped3 %>% 
+  filter(Question_type == "volume_valence_dilemma")
+
+distribution <- test_reshaped3 %>% 
+  filter(Question_type == "distribution")
+
+#write_csv(volume_valence, "volume_valence.csv")
+#write_csv(distribution, "distribution.csv")
+```
+
+
+*Question data* and merging with dataframes
+```{r}
+question_df <-read.csv("nodist.csv")
+question_df$Question_ID <-  as.character(question_df$Question_ID)
+question_df$X <- NULL
+
+vvfull <- volume_valence %>% 
+  mutate(Question_ID = gsub("[^0-9]", "", Question_idS)) %>% 
+  inner_join(question_df, by = "Question_ID")
+
+vvfull$order <- NULL
+vvfull$Response <- ifelse(vvfull$Response == 1, "A", "B")
+vvfull$Response <- as.factor(vvfull$Response)
+vvfull$Question_type <-  NULL
+vvfull_test <- vvfull %>% 
+  mutate(Choice = ifelse((vvfull$order == "2 is A" & vvfull$Response == "B")|(vvfull$order == "1 is A" & vvfull$Response == "A"), "1", "2"))
+
+vvfull_test %>% group_by(Choice) %>% summarise(n())
+
+vvfull_test$rating_m <- as.factor(as.character(vvfull_test$rating_m))
+levels(vvfull_test$rating_m) <- c("Not at all","a small extent","a large extent", "depends")
+vvfull_test$volume_m <- as.factor(as.character(vvfull_test$volume_m))
+levels(vvfull_test$volume_m) <- c("a small extent","a large extent", "depends")
+vvfull_test$content_ <- as.factor(as.character(vvfull_test$content_))
+levels(vvfull_test$content_) <- c("Not at all","a small extent","a large extent", "depends")
+
+vvfull_test$participant_ID <-as.factor(as.numeric(as.factor(vvfull_test$responde)))
+
+vvfull_final <- vvfull_test %>% 
+  mutate(chosen_valence = ifelse(Choice == 1, valence_1, valence_2),
+         chosen_volume = ifelse(Choice == 1, volume_1, volume_2),
+         not_chosen_valence = ifelse(Choice == 1, valence_2, valence_1),
+         not_chosen_volume= ifelse(Choice == 1, volume_2, volume_1)) %>% 
+  mutate(valence_gain = chosen_valence - not_chosen_valence,
+         volume_gain = chosen_volume - not_chosen_volume) %>% 
+  select(Participant_ID = participant_ID, time = difftime, age, gender, rating_opinion = rating_m, volume_opinion = volume_m, content_opinion = content_, Question_ID = Question_ID, chosen_valence, chosen_volume, not_chosen_valence, not_chosen_volume, valence_gain, volume_gain )
+
+
+write_csv(vvfull_final, "almost_final_nodist.csv")
+
+distribution_too <- distribution %>% 
+  mutate(chosen_dist = ifelse(Response == 1, "larger_range", "smaller_range"),
+         Question_ID = gsub("[^0-9]", "", Question_idS),
+         Participant_ID = as.factor(as.numeric(as.factor(distribution$responde)))) %>%
+  select(Participant_ID, Question_ID, chosen_dist) %>% 
+  inner_join(vvfull_final, by = c("Participant_ID", "Question_ID")) %>% 
+  select(Participant_ID, Question_ID, time, everything() )
+
+distribution_too %>% group_by(chosen_dist) %>% summarise(n())
+
+write_csv(distribution_too, "final_purchasing_decisions.csv")
+```
+Logic:
+if order = "2 is A" and Response = A -> Choice  = 2
+if order = "2 is A" and Response = B -> Choice = 1
+if order = "1 is A" and Response = A -> Choice = 1
+if order = "1 is A" and Response = B -> Choice = 2
+
+
+# Data visualization
+```{r}
+df <-  distribution_too
+
+df <- df %>% 
+  mutate(volume_diff = as.factor(abs(volume_gain)),
+         valence_diff = as.factor(round(abs(valence_gain), 1)),
+         preference = ifelse(valence_gain > 0, "valence", "volume"))
+
+
+
+
+######### Data distributions
+
+ggplot(df, aes(valence_gain, color = "purple"))+
+  geom_density( aes(fill = preference, alpha = 0.5), position = "dodge") +
+  theme_classic()+
+  geom_vline(data=df, aes(xintercept=0), color = "black",
+             linetype="dashed")+
+  geom_text(mapping=aes(x=-0.35, y=0.75, label="Sacrifice"), size=4, vjust=1.2, hjust=0) +
+  scale_color_viridis(discrete = TRUE, option = "A", begin = 0.3, end=0.9)+
+  geom_text(mapping=aes(x=0.15, y=0.75, label="Gain"), size=4, vjust=1.2, hjust=0) +
+  xlab("Valence sacrifice/gain")+
+  ylab("Data Density")+
+  ggtitle("Participants' preference for valence gain")
+
+ggplot(df, aes(volume_gain, color = "orange"))+
+  geom_density(fill = "orange", alpha = 0.2)+
+  theme_classic()+
+  geom_vline(data=df, aes(xintercept=0), color = "black",
+             linetype="dashed")+
+  geom_text(mapping=aes(x=-50, y=0.03, label="Sacrifice"), size=3, vjust=1.2, hjust=0) +
+  geom_text(mapping=aes(x=35, y=0.03, label="Gain"), size=3, vjust=1.2, hjust=0) +
+  xlab("Volume sacrifice/gain")+
+  ylab("Data Density")+
+  ggtitle("Participants' preference for volume gain")
+
+
+ggplot(df, aes(volume_diff, color = df$preference))+
+  geom_bar(width = 0.1, fill = "white")+
+  theme_classic()+
+  scale_color_viridis(discrete = TRUE, option = "A", begin = 0.3, end=0.9)+
+  #xlab("Emphasis on rating")+
+  #ylab("Number of answers")+
+  #scale_y_continuous(labels = function(x) format(x/20), limits = c(0,600))+
+  #coord_fixed(ratio = 0.007)+
+  #theme(legend.position = "none")+
+  #theme(axis.text.x = element_text(angle = 50, hjust = 1))+
+  ggtitle("Preference depending on volume diff (x axis) and rating diff (facet)")+
+  facet_wrap(~valence_diff)
+
+
+
+
+ggplot(df, aes(valence_diff, color = df$preference))+
+  geom_bar(width = 0.1, fill = "white")+
+  theme_classic()+
+  scale_color_viridis(discrete = TRUE, option = "A", begin = 0.3, end=0.9)+
+  xlab("Presented difference in valence")+
+  ylab("Number of answers")+
+  #scale_y_continuous(labels = function(x) format(x/20), limits = c(0,600))+
+  #coord_fixed(ratio = 0.007)+
+  #theme(legend.position = "none")+
+  #theme(axis.text.x = element_text(angle = 50, hjust = 1))+
+  ggtitle("Preference depending on difference in valence and volume")+
+  facet_wrap(~volume_diff, labeller = label_both)+
+  theme(strip.background = element_rect(color="grey", fill="white", size=1.5))+
+  labs(color = "Preference")
+
+
+ggplot(df, aes(rating_opinion, color = df$preference))+
+  geom_bar(width = 0.1, fill = "white")+
+  theme_classic()+
+  scale_color_viridis(discrete = TRUE, option = "A", begin = 0.3, end=0.9)+
+  #xlab("Presented difference in valence")+
+  #ylab("Number of answers")+
+  #scale_y_continuous(labels = function(x) format(x/20), limits = c(0,600))+
+  #coord_fixed(ratio = 0.007)+
+  #theme(legend.position = "none")+
+  #theme(axis.text.x = element_text(angle = 50, hjust = 1))+
+  #ggtitle("Preference depending on difference in valence and volume")+
+  #facet_wrap(~volume_diff, labeller = label_both)+
+  #theme(strip.background = element_rect(color="grey", fill="white", size=1.5))+
+   labs(color = "Preference")
+
+#######Participants opinions
+
+ggplot(df, aes(df$rating_opinion, color = df$rating_opinion))+
+  geom_bar(width = 0.7, fill = "white")+
+  theme_classic()+
+  scale_color_viridis(discrete = TRUE, option = "A", begin = 0.3, end=0.9,direction = -1)+
+  xlab("Emphasis on rating")+
+  ylab("Number of answers")+
+  scale_y_continuous(labels = function(x) format(x/20), limits = c(0,600))+
+  coord_fixed(ratio = 0.007)+
+  theme(legend.position = "none")+
+  theme(axis.text.x = element_text(angle = 50, hjust = 1))+
+  ggtitle("Self-evaluated importance of rating")
+
+
+#add an empty level to volume
+df$volume_opinion2 <- factor(df$volume_opinion, levels = c("Not at all", levels(df$volume_opinion)))
+
+ggplot(df, aes(df$volume_opinion, color = df$volume_opinion))+
+  geom_bar(width = 0.7, fill = "white")+
+  theme_classic()+
+  scale_color_viridis(discrete = TRUE, option = "A", begin = 0.3, end=0.75,direction = -1, drop = FALSE)+
+  xlab("Emphasis on volume")+
+  ylab("Number of answers")+
+  scale_y_continuous(labels = function(x) format(x/20), limits = c(0,600))+
+  scale_x_discrete(drop = FALSE)+
+  coord_fixed(ratio = 0.007)+
+  theme(legend.position = "none")+
+  theme(axis.text.x = element_text(angle = 50, hjust = 1))+
+  ggtitle("Self-evaluated importance of volume")
+
+ggplot(df, aes(df$content_opinion, color = df$content_opinion))+
+  geom_bar(width = 0.7, fill = "white")+
+  theme_classic()+
+  scale_color_viridis(discrete = TRUE, option = "A", begin = 0.3, end=0.9,direction = -1)+
+  xlab("Emphasis on content")+
+  ylab("Number of answers")+
+  scale_y_continuous(labels = function(x) format(x/20), limits = c(0,600))+
+  coord_fixed(ratio = 0.007)+
+  theme(legend.position = "none")+
+  theme(axis.text.x = element_text(angle = 50, hjust = 1))+
+  ggtitle("Self-evaluated importance of content")
+
+
+
+opinions_df <-  df %>% 
+  select(Participant_ID, rating_opinion, volume_opinion, content_opinion)
+  
+opinions_df <- opinions_df %>% 
+  dplyr::distinct()
+
+opinions_df <-  gather(opinions_df, key = Aspect, value = Opinion, rating_opinion, volume_opinion, content_opinion, factor_key = FALSE)
+
+
+opinions_df$Aspect <-  as.factor(opinions_df$Aspect)
+levels(opinions_df$Aspect)
+
+
+opinions_prop <- opinions_df %>% 
+  group_by(Aspect, Opinion) %>% 
+  summarise(n = n()) %>% 
+  mutate(prop = n/sum(n))
+
+ggplot(opinions_prop) + geom_col(aes(Aspect, y = prop)) + geom_text(aes(x = Aspect, 
+  y = prop + 0.05, label = round(prop, 2)))
+
+library(scales)
+ggplot(opinions_prop, aes(x = Aspect,fill = Opinion)) +
+  geom_bar(aes(y = ..prop..),stat = "identity") +
+  geom_text(size = 3, position = position_stack(vjust = 0.5))+
+  geom_text(aes( label = scales::percent(..prop..),
+                   y= ..prop.. ), stat= "count", vjust = -.5) +
+  theme_classic()+
+  scale_fill_viridis(discrete = TRUE, option = "A", begin = 0.3, end=0.9,direction = -1)+
+  xlab("Attribute")+
+  ylab("Number of answers")+
+  coord_fixed(ratio = 0.07)+
+  labs(fill = "Importance in decision making")+
+  scale_x_discrete(labels=c("Content", "Rating", "Volume"))+
+  #theme(axis.text.x = element_text(hjust = 1))+
+  ggtitle("Self-evaluated importance of review attributes")
+
+
+
+
+
+
+
+ggplot(df, aes(volume_diff, valence_gain))+
+  geom_boxplot()
+
+ggplot(df, aes(preference, valence_diff))+
+  geom_jitter()
+
+ggplot(df, aes(volume_diff, preference, colour = preference))+
+  scale_colour_viridis(discrete = TRUE, option = "A", begin = 0.4, end=0.75)+
+  geom_jitter()
+
+ggplot(df, aes(preference, fill =volume_diff))+
+  geom_area(aes(color = volume_diff), stat = 'count')+
+  scale_fill_viridis(discrete = TRUE, option = "A")+
+  scale_color_viridis(discrete = TRUE, option = "A")+
+  theme_minimal()
+  #theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  #ylab("Number of times in top 2")+
+  #ggtitle("Number of times classifiers were in top 2 of any of the performance scores
+  #        Linear SVC selection")
+
+
+
+ggplot(df, aes(volume_diff, preference, color = valence_diff))+
+  geom_jitter(size=1)+
+  scale_color_viridis(discrete = TRUE, option = "A", begin = 0.3, end=0.9,direction = -1)+
+  theme_classic()+
+  xlab("Presented difference in volume")+
+  ylab("Preference")+
+  scale_y_discrete(labels=c("Higher valence", "Higher volume"))+
+  labs(color = "Presented difference in valence")+
+  ggtitle("Preference depending on presented difference in volume and valence")
+  
+
+#simplify valence diff
+df <-  df %>% 
+  mutate(valence_diff_e = ifelse(as.numeric(as.character(valence_diff)) > 0.5, "over 0.5", "below 0.5"),
+         volume_diff_e = ifelse(as.numeric(as.character(volume_diff)) >= 25  , "over 25", "below 25"))
+
+
+
+ggplot(df, aes(volume_diff, preference, color = valence_diff_e))+
+  geom_jitter(size=1)+
+  scale_color_viridis(discrete = TRUE, option = "A", begin = 0.3, end=0.9,direction = -1)+
+  theme_classic()+
+  xlab("Presented difference in volume")+
+  ylab("Preference")+
+  scale_y_discrete(labels=c("Higher valence", "Higher volume"))+
+  labs(color = "Presented difference in valence")+
+  ggtitle("Simplified: preference based on difference in volume and valence")
+
+df$chosen_dist <-  as.factor(df$chosen_dist)
+df$chosen_dist <-  relevel(df$chosen_dist, ref = "smaller_range")
+
+##### Analysis: distributions
+ggplot(df, aes(chosen_dist, color = chosen_dist))+
+  geom_bar(fill = "white", width = 0.6)+
+  theme_classic()+
+  scale_color_viridis(discrete = TRUE, option = "A", begin = 0.1, end=0.5)+
+  xlab("Chosen distribution")+
+  ylab("Number of answers")+
+  scale_x_discrete(labels=c("Smaller range", "Larger range"))+
+  coord_fixed(ratio = 0.004)+
+  theme(legend.position = "none")+
+  #theme(axis.text.x = element_text(angle = 50, hjust = 1))+
+  ggtitle("Participants' preference for distribution type")
+
+ggplot(df, aes(chosen_dist, chosen_valence, color = chosen_dist))+
+  geom_violin() +
+  geom_count()+
+  #geom_bar(width = 0.2, fill = "white", position = "dodge")+
+  theme_classic()+
+  scale_color_viridis(discrete = TRUE, option = "A", begin = 0.1, end=0.5)+
+  scale_x_discrete(labels=c("Smaller range", "Larger range"))+
+  xlab("Chosen distribution")+
+  ylab("Presented valence")+
+  coord_fixed(ratio = 2)+
+  ggtitle("Preference for distributions depending on valence")
+
+
+
+
+ggplot(df, aes(chosen_dist, chosen_volume, color = chosen_dist))+
+  geom_boxplot() +
+  geom_jitter(size = 1, alpha = 0.1)+
+  #geom_bar(width = 0.2, fill = "white", position = "dodge")+
+  theme_classic()+
+  scale_color_viridis(discrete = TRUE, option = "A", begin = 0.1, end=0.5)+
+  scale_x_discrete(labels=c("Smaller range", "Larger range"))+
+  xlab("Chosen distribution")+
+  ylab("Presented volume")+
+  coord_fixed(ratio = 0.01)+
+  ggtitle("Preference for distributions depending on volume")
+
+
+ggplot(df, aes(chosen_valence, chosen_dist, color = chosen_dist))+
+  geom_boxplot() +
+  geom_jitter(size = 1, alpha = 0.1)+
+  #geom_bar(width = 0.2, fill = "white", position = "dodge")+
+  theme_classic()+
+  scale_color_viridis(discrete = TRUE, option = "A", begin = 0.1, end=0.5)+
+  scale_x_discrete(labels=c("Smaller range", "Larger range"))+
+  xlab("Chosen distribution")+
+  ylab("Presented valence")+
+  coord_fixed(ratio = 2)+
+  ggtitle("Preference for distributions depending on valence")
+
+valence_values <- range(3.7, 4.9, )
+
+ggplot(df, aes(chosen_valence, color = chosen_dist))+
+  geom_smooth(method = "lm", stat = "count")+
+  #geom_count()+
+  #geom_bar(width = 0.2, fill = "white", position = "dodge")+
+  theme_classic()+
+  scale_color_viridis(discrete = TRUE, option = "A", begin = 0.1, end=0.5)+
+  scale_x_continuous(breaks = c(3.7, 3.9,  4.1, 4.3, 4.5, 4.7, 4.9))+
+  xlab("Valence of the product")+
+  ylab("Data density")+
+  #coord_fixed(ratio = 2)+
+  labs(color = "Distribution choice")+
+  ggtitle("Preference for distributions depending on valence")
+
+ggplot(df, aes(chosen_volume, color = chosen_dist))+
+  geom_density( aes(fill = chosen_dist, alpha = 0.5), position = "dodge") +
+  #geom_count()+
+  #geom_bar(width = 0.2, fill = "white", position = "dodge")+
+  theme_classic()+
+  scale_color_viridis(discrete = TRUE, option = "A", begin = 0.5, end=0.9)+
+  scale_fill_viridis(discrete = TRUE, option = "A",begin = 0.2, end=0.5)+
+  #scale_x_discrete(labels=c("Smaller range", "Larger range"))+
+  xlab("Volume of reviews for the product")+
+  ylab("Data density")+
+  ggtitle("Preference for distributions depending on volume")
+
+ggplot(df, aes(chosen_volume, color = preference))+
+  geom_density( aes(fill = preference, alpha = 0.5), position = "dodge") +
+  #geom_count()+
+  #geom_bar(width = 0.2, fill = "white", position = "dodge")+
+  theme_classic()+
+  scale_color_viridis(discrete = TRUE, option = "A", begin = 0.5, end=0.9)+
+  scale_fill_viridis(discrete = TRUE, option = "A",begin = 0.2, end=0.5)+
+  #scale_x_discrete(labels=c("Smaller range", "Larger range"))+
+  xlab("Volume of reviews for the product")+
+  ylab("Data density")+
+  ggtitle("Preference for distributions depending on volume")
+
+ggplot(df, aes(chosen_valence, color = preference))+
+  geom_density( aes(fill = preference, alpha = 0.5), position = "dodge") +
+  #geom_count()+
+  #geom_bar(width = 0.2, fill = "white", position = "dodge")+
+  theme_classic()+
+  scale_color_viridis(discrete = TRUE, option = "A", begin = 0.5, end=0.9)+
+  scale_fill_viridis(discrete = TRUE, option = "A",begin = 0.2, end=0.5)+
+  #scale_x_discrete(labels=c("Smaller range", "Larger range"))+
+  xlab("Volume of reviews for the product")+
+  ylab("Data density")+
+  ggtitle("Preference for distributions depending on volume")
+
+```
+
+
+
+#Statistical Analysis
+
+Modeling and stuff
+
+1.
+
+2. 
+```{r}
+write_csv(df, "sunday_version_df.csv")
+
+pacman::p_load(lmerTest)
+
+df$preference <- as.factor(df$preference)
+levels(df$preference) #we are predicting
+
+
+m1 <-  glmer(preference ~ valence_diff_e + volume_diff_e +valence_diff_e*volume_diff_e+ (1|Participant_ID) ,family="binomial", df)
+
+summary(m1)
+boot::inv.logit(-1.4265)
+boot::inv.logit(-1.4265+1.0837)
+
+df$volume_diff_n <- as.numeric(as.character(df$volume_diff))
+df$valence_diff_n <- as.numeric(as.character(df$valence_diff))
+
+df$volume_diff_n_s <- df$volume_diff_n - mean(df$volume_diff_n)
+df$valence_diff_n_s <- df$valence_diff_n - mean(df$valence_diff_n)
+
+
+
+ggplot(df, aes(chosen_volume, color = preference))+
+  geom_density( aes(fill = preference, alpha = 0.5), position = "dodge") +
+  #geom_count()+
+  #geom_bar(width = 0.2, fill = "white", position = "dodge")+
+  theme_classic()+
+  scale_color_viridis(discrete = TRUE, option = "A",begin = 0.3, end=0.9)+
+  scale_fill_viridis(discrete = TRUE, option = "A",begin = 0.3, end=0.9)+
+  #scale_x_discrete(labels=c("Smaller range", "Larger range"))+
+  xlab("Volume of reviews for the product")+
+  ylab("Data density")+
+  ggtitle("Preference for attribute depending on volume")
+
+ggplot(df, aes(chosen_valence, color = preference))+
+  geom_density( aes(fill = preference, alpha = 0.5), position = "dodge") +
+  #geom_count()+
+  #geom_bar(width = 0.2, fill = "white", position = "dodge")+
+  theme_classic()+
+  scale_color_viridis(discrete = TRUE, option = "A",begin = 0.3, end=0.9)+
+  scale_fill_viridis(discrete = TRUE, option = "A",begin = 0.3, end=0.9)+
+  #scale_x_discrete(labels=c("Smaller range", "Larger range"))+
+  xlab("Product's rating")+
+  ylab("Data density")+
+  ggtitle("Preference for attribute depending on valence")
+
+######################ACTUAL MODELS ##################################3
+
+#chi squared
+df %>% 
+  group_by(chosen_dist) %>% 
+  summarise(number_times_chosen = n(), prob_in_stimuli = 0.5)
+
+obs <- c(712,408)
+exp <- c(.50, 0.50)
+chisq.test(obs, p=exp)
+
+
+#Model 1
+levels(df$preference)
+m1 <-  glmer(preference ~ valence_diff_n + volume_diff_n +valence_diff_n*volume_diff_n+ (1+ valence_diff_n+volume_diff_n|Participant_ID) ,family="binomial", df)
+summary(m1)
+
+
+
+
+m2 <-  glmer(preference ~ valence_diff_n + volume_diff_n +valence_diff_n*volume_diff_n+ (1+ valence_diff_n+volume_diff_n|Participant_ID) ,family="binomial", df)
+summary(m2)
+
+
+ggplot(df, aes(chosen_dist))+
+  geom_bar( aes(fill = chosen_dist, alpha = 0.5), position = "identity") +
+  #theme_classic()+
+  #geom_vline(data=df, aes(xintercept=0), color = "black",linetype="dashed")+
+  #geom_text(mapping=aes(x=-0.35, y=0.75, label="Sacrifice"), size=4, vjust=1.2, hjust=0) +
+  scale_color_viridis(discrete = TRUE, option = "A", begin = 0.3, end=0.9)+
+  #geom_text(mapping=aes(x=0.15, y=0.75, label="Gain"), size=4, vjust=1.2, hjust=0) +
+  #xlab("Valence sacrifice/gain")+
+  #ylab("Data Density")+
+  ggtitle("Participants' preference for valence gain")
+
+ggplot(df, aes(x = chosen_dist)) +
+  geom_bar(stat = "count") +
+  #geom_text(size = 3, position = position_stack(vjust = 0.5))+
+  #geom_text(aes( label = scales::percent(..prop..),y= ..prop.. ), stat= "count", vjust = -.5) +
+  theme_classic()+
+  scale_fill_viridis(discrete = TRUE, option = "A", begin = 0.3, end=0.9,direction = -1)+
+  #xlab("Attribute")+
+  #ylab("Number of answers")+
+  #coord_fixed(ratio = 0.07)+
+  labs(fill = "Importance in decision making")+
+  #theme(axis.text.x = element_text(hjust = 1))+
+  ggtitle("Self-evaluated importance of review attributes")
+
+
+```
+
+chisq.test(obs, p=exp)
+
+
+Null hypothesis: The proportion of smaller and larger distribution is 50% and 50%, respectively.
+Alternative hypothesis: At least one of the proportions in the null hypothesis is false.
+
+If the P-value is less than the significance level (0.05), we cannot accept the null hypothesis.
+If the P-value is above 0.05, we can accept the null hypothesis 
+
+Model 2: Choice of distribution = 𝛼p + 𝛽p ∗ Valence + Ɛ
+Model 3: Choice of distribution = 𝛼p + 𝛽p ∗ Volume + Ɛ
+
+```{r}
+#Model 1
+levels(df$preference)
+m1 <-  glmer(preference ~ valence_diff_n + (1+ valence_diff_n|Participant_ID) ,family="binomial", df)
+summary(m1)
+
+m2 <-  glmer(preference ~ volume_diff_n + (1+ volume_diff_n|Participant_ID) ,family="binomial", df)
+summary(m2)
+
+m3 <-  glmer(preference ~ valence_diff_n + volume_diff_n +valence_diff_n*volume_diff_n+ (1+ valence_diff_n+volume_diff_n|Participant_ID) ,family="binomial", df)
+summary(m3)
+
+m4 <- glmer(chosen_dist ~ chosen_valence + (1+ chosen_valence|Participant_ID) ,family="binomial", df)
+summary(m4)
+
+m5 <-  glmer(chosen_dist ~ chosen_volume+ (1+ chosen_volume|Participant_ID) ,family="binomial", df)
+summary(m5)
+```
+
+
